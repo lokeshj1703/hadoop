@@ -22,8 +22,10 @@ package org.apache.hadoop.utils.db;
 import org.apache.hadoop.conf.StorageUnit;
 import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.BloomFilter;
+import org.rocksdb.Cache;
 import org.rocksdb.ColumnFamilyOptions;
 import org.rocksdb.CompactionStyle;
+import org.rocksdb.CompressionType;
 import org.rocksdb.DBOptions;
 
 import java.math.BigDecimal;
@@ -49,16 +51,21 @@ public enum DBProfile {
     public ColumnFamilyOptions getColumnFamilyOptions() {
 
       // Set BlockCacheSize to 256 MB. This should not be an issue for HADOOP.
-      final long blockCacheSize = toLong(StorageUnit.MB.toBytes(256.00));
+      final long blockCacheSize = toLong(StorageUnit.MB.toBytes(256));
 
       // Set the Default block size to 16KB
-      final long blockSize = toLong(StorageUnit.KB.toBytes(16));
+      final long blockSize = toLong(StorageUnit.KB.toBytes(128));
 
       // Write Buffer Size -- set to 128 MB
-      final long writeBufferSize = toLong(StorageUnit.MB.toBytes(128));
+      final long writeBufferSize = toLong(StorageUnit.MB.toBytes(64));
 
       return new ColumnFamilyOptions()
-          .setLevelCompactionDynamicLevelBytes(true)
+//          .setLevelCompactionDynamicLevelBytes(true)
+          .setMaxWriteBufferNumber(4)
+//          .setCompressionType(CompressionType.NO_COMPRESSION)
+//          .setCompactionStyle(CompactionStyle.LEVEL)
+//          .setLevelCompactionDynamicLevelBytes(true)
+//          .setTargetFileSizeBase(writeBufferSize * 4)
           .setWriteBufferSize(writeBufferSize)
           .setTableFormatConfig(
               new BlockBasedTableConfig()
@@ -66,14 +73,15 @@ public enum DBProfile {
                   .setBlockSize(blockSize)
                   .setCacheIndexAndFilterBlocks(true)
                   .setPinL0FilterAndIndexBlocksInCache(true)
-                  .setFilter(new BloomFilter()));
+                  .setFilterPolicy(new BloomFilter())
+                  .setCacheIndexAndFilterBlocksWithHighPriority(true));
     }
 
     @Override
     public DBOptions getDBOptions() {
       final int maxBackgroundCompactions = 4;
       final int maxBackgroundFlushes = 2;
-      final long bytesPerSync = toLong(StorageUnit.MB.toBytes(1.00));
+      final long bytesPerSync = toLong(StorageUnit.MB.toBytes(16.00));
       final boolean createIfMissing = true;
       final boolean createMissingColumnFamilies = true;
       return new DBOptions()
@@ -82,7 +90,9 @@ public enum DBProfile {
           .setMaxBackgroundFlushes(maxBackgroundFlushes)
           .setBytesPerSync(bytesPerSync)
           .setCreateIfMissing(createIfMissing)
-          .setCreateMissingColumnFamilies(createMissingColumnFamilies);
+          .setCreateMissingColumnFamilies(createMissingColumnFamilies)
+          .setIncreaseParallelism(4)
+          .setMaxOpenFiles(-1);
     }
 
 

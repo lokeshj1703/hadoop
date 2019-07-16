@@ -69,6 +69,7 @@ public class XceiverClientMetrics {
   }
 
   public static XceiverClientMetrics create() {
+    DefaultMetricsSystem.initialize("XceiverClientMetrics");
     MetricsSystem ms = DefaultMetricsSystem.instance();
     return ms.register(SOURCE_NAME, "Storage Container Client Metrics",
         new XceiverClientMetrics());

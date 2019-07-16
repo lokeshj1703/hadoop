@@ -39,6 +39,11 @@ https://maven.apache.org/xsd/maven-4.0.0.xsd">
       <groupId>io.netty</groupId>
       <artifactId>netty-all</artifactId>
     </dependency>
+    <dependency>
+      <groupId>commons-lang</groupId>
+      <artifactId>commons-lang</artifactId>
+      <version>2.6</version>
+    </dependency>
 
   </dependencies>
 </project>

@@ -27,6 +27,7 @@ import org.eclipse.jetty.util.StringUtil;
 import org.rocksdb.ColumnFamilyDescriptor;
 import org.rocksdb.ColumnFamilyOptions;
 import org.rocksdb.DBOptions;
+import org.rocksdb.InfoLogLevel;
 import org.rocksdb.RocksDB;
 import org.rocksdb.Statistics;
 import org.rocksdb.StatsLevel;
@@ -198,6 +199,15 @@ public final class DBStoreBuilder {
       LOG.info("Using default options. {}", dbProfile.toString());
       option = dbProfile.getDBOptions();
     }
+
+    org.rocksdb.Logger logger = new org.rocksdb.Logger(option) {
+      @Override
+      protected void log(InfoLogLevel infoLogLevel, String s) {
+        LOG.info(s);
+      }
+    };
+    logger.setInfoLogLevel(InfoLogLevel.DEBUG_LEVEL);
+    option.setLogger(logger);
 
     if (!rocksDbStat.equals(OZONE_METADATA_STORE_ROCKSDB_STATISTICS_OFF)) {
       Statistics statistics = new Statistics();

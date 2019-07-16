@@ -151,6 +151,7 @@ public class KeyManagerImpl implements KeyManager {
   private final String omId;
   private final OzoneBlockTokenSecretManager secretManager;
   private final boolean grpcBlockTokenEnabled;
+  private Map<String, OmBucketInfo> bucketInfoMap = new HashMap<>();
 
   private BackgroundService keyDeletingService;
 
@@ -223,14 +224,20 @@ public class KeyManagerImpl implements KeyManager {
   private OmBucketInfo getBucketInfo(String volumeName, String bucketName)
       throws IOException {
     String bucketKey = metadataManager.getBucketKey(volumeName, bucketName);
-    return metadataManager.getBucketTable().get(bucketKey);
+    if (bucketInfoMap.containsKey(bucketKey)) {
+      return bucketInfoMap.get(bucketKey);
+    } else {
+      OmBucketInfo bucketInfo = metadataManager.getBucketTable().get(bucketKey);
+      bucketInfoMap.put(bucketKey, bucketInfo);
+      return bucketInfo;
+    }
   }
 
   private void validateBucket(String volumeName, String bucketName)
       throws IOException {
     String bucketKey = metadataManager.getBucketKey(volumeName, bucketName);
     // Check if bucket exists
-    if (metadataManager.getBucketTable().get(bucketKey) == null) {
+    if (getBucketInfo(volumeName, bucketName) == null) {
       String volumeKey = metadataManager.getVolumeKey(volumeName);
       // If the volume also does not exist, we should throw volume not found
       // exception
@@ -454,7 +461,7 @@ public class KeyManagerImpl implements KeyManager {
         args.getVolumeName(), args.getBucketName(), args.getKeyName());
 
     FileEncryptionInfo encInfo;
-    metadataManager.getLock().acquireLock(BUCKET_LOCK, volumeName, bucketName);
+//    metadataManager.getLock().acquireLock(BUCKET_LOCK, volumeName, bucketName);
     try {
       OmBucketInfo bucketInfo = getBucketInfo(volumeName, bucketName);
       encInfo = getFileEncryptionInfo(bucketInfo);
@@ -465,9 +472,9 @@ public class KeyManagerImpl implements KeyManager {
       LOG.error("Key open failed for volume:{} bucket:{} key:{}",
           volumeName, bucketName, keyName, ex);
       throw new OMException(ex.getMessage(), ResultCodes.KEY_ALLOCATION_ERROR);
-    } finally {
-      metadataManager.getLock().releaseLock(BUCKET_LOCK, volumeName,
-          bucketName);
+//    } finally {
+//      metadataManager.getLock().releaseLock(BUCKET_LOCK, volumeName,
+//          bucketName);
     }
     if (keyInfo == null) {
       // the key does not exist, create a new object, the new blocks are the
@@ -509,17 +516,17 @@ public class KeyManagerImpl implements KeyManager {
       List<OmKeyLocationInfo> locations, FileEncryptionInfo encInfo)
       throws IOException {
     OmKeyInfo keyInfo = null;
-    if (keyArgs.getIsMultipartKey()) {
-      keyInfo = prepareMultipartKeyInfo(keyArgs, size, locations, encInfo);
-      //TODO args.getMetadata
-    } else if (metadataManager.getKeyTable().isExist(dbKeyName)) {
-      keyInfo = metadataManager.getKeyTable().get(dbKeyName);
-      // the key already exist, the new blocks will be added as new version
-      // when locations.size = 0, the new version will have identical blocks
-      // as its previous version
-      keyInfo.addNewVersion(locations, true);
-      keyInfo.setDataSize(size + keyInfo.getDataSize());
-    }
+//    if (keyArgs.getIsMultipartKey()) {
+//      keyInfo = prepareMultipartKeyInfo(keyArgs, size, locations, encInfo);
+//      //TODO args.getMetadata
+//    } else if (metadataManager.getKeyTable().isExist(dbKeyName)) {
+//      keyInfo = metadataManager.getKeyTable().get(dbKeyName);
+//      // the key already exist, the new blocks will be added as new version
+//      // when locations.size = 0, the new version will have identical blocks
+//      // as its previous version
+//      keyInfo.addNewVersion(locations, true);
+//      keyInfo.setDataSize(size + keyInfo.getDataSize());
+//    }
     return keyInfo;
   }
 
@@ -637,19 +644,36 @@ public class KeyManagerImpl implements KeyManager {
         .getOpenKey(volumeName, bucketName, keyName, clientID);
     Preconditions.checkNotNull(locationInfoList);
     try {
-      metadataManager.getLock().acquireLock(BUCKET_LOCK, volumeName,
-          bucketName);
+//      metadataManager.getLock().acquireLock(BUCKET_LOCK, volumeName,
+//          bucketName);
       validateBucket(volumeName, bucketName);
-      OmKeyInfo keyInfo = metadataManager.getOpenKeyTable().get(openKey);
-      if (keyInfo == null) {
-        throw new OMException("Failed to commit key, as " + openKey + "entry " +
-            "is not found in the openKey table", KEY_NOT_FOUND);
-      }
-      keyInfo.setDataSize(args.getDataSize());
-      keyInfo.setModificationTime(Time.now());
+//      OmKeyInfo keyInfo = metadataManager.getOpenKeyTable().get(openKey);
+//      if (keyInfo == null) {
+//        throw new OMException("Failed to commit key, as " + openKey + "entry " +
+//            "is not found in the openKey table", KEY_NOT_FOUND);
+//      }
+//      keyInfo.setDataSize(args.getDataSize());
+//      keyInfo.setModificationTime(Time.now());
+//
+//      //update the block length for each block
+//      keyInfo.updateLocationInfoList(locationInfoList);
 
-      //update the block length for each block
-      keyInfo.updateLocationInfoList(locationInfoList);
+      OmKeyInfo keyInfo = new OmKeyInfo.Builder()
+          .setVolumeName(args.getVolumeName())
+          .setBucketName(args.getBucketName())
+          .setKeyName(args.getKeyName())
+          .setOmKeyLocationInfos(Collections.singletonList(
+              new OmKeyLocationInfoGroup(0, locationInfoList)))
+          .setCreationTime(Time.now())
+          .setModificationTime(Time.now())
+          .setDataSize(args.getDataSize())
+          .setReplicationType(ReplicationType.RATIS)
+          .setReplicationFactor(ReplicationFactor.THREE)
+          .setFileEncryptionInfo(
+              getFileEncryptionInfo(getBucketInfo(volumeName, bucketName)))
+          .build();
+
+
       metadataManager.getStore().move(
           openKey,
           objectKey,
@@ -663,9 +687,9 @@ public class KeyManagerImpl implements KeyManager {
           volumeName, bucketName, keyName, ex);
       throw new OMException(ex.getMessage(),
           ResultCodes.KEY_ALLOCATION_ERROR);
-    } finally {
-      metadataManager.getLock().releaseLock(BUCKET_LOCK, volumeName,
-          bucketName);
+//    } finally {
+//      metadataManager.getLock().releaseLock(BUCKET_LOCK, volumeName,
+//          bucketName);
     }
   }
 
@@ -1867,37 +1891,37 @@ public class KeyManagerImpl implements KeyManager {
     String volumeName = args.getVolumeName();
     String bucketName = args.getBucketName();
     String keyName = args.getKeyName();
-    OpenKeySession keySession;
+    OpenKeySession keySession = openKey(args);
 
-    metadataManager.getLock().acquireLock(BUCKET_LOCK, volumeName, bucketName);
-    try {
-      OzoneFileStatus fileStatus;
-      try {
-        fileStatus = getFileStatus(args);
-        if (fileStatus.isDirectory()) {
-          throw new OMException("Can not write to directory: " + keyName,
-              ResultCodes.NOT_A_FILE);
-        } else if (fileStatus.isFile()) {
-          if (!isOverWrite) {
-            throw new OMException("File " + keyName + " already exists",
-                ResultCodes.FILE_ALREADY_EXISTS);
-          }
-        }
-      } catch (OMException ex) {
-        if (ex.getResult() != FILE_NOT_FOUND) {
-          throw ex;
-        }
-      }
-
-      verifyNoFilesInPath(volumeName, bucketName,
-          Paths.get(keyName).getParent(), !isRecursive);
-      // TODO: Optimize call to openKey as keyInfo is already available in the
-      // filestatus. We can avoid some operations in openKey call.
-      keySession = openKey(args);
-    } finally {
-      metadataManager.getLock().releaseLock(BUCKET_LOCK, volumeName,
-          bucketName);
-    }
+//    metadataManager.getLock().acquireLock(BUCKET_LOCK, volumeName, bucketName);
+//    try {
+//      OzoneFileStatus fileStatus;
+//      try {
+//        fileStatus = getFileStatus(args);
+//        if (fileStatus.isDirectory()) {
+//          throw new OMException("Can not write to directory: " + keyName,
+//              ResultCodes.NOT_A_FILE);
+//        } else if (fileStatus.isFile()) {
+//          if (!isOverWrite) {
+//            throw new OMException("File " + keyName + " already exists",
+//                ResultCodes.FILE_ALREADY_EXISTS);
+//          }
+//        }
+//      } catch (OMException ex) {
+//        if (ex.getResult() != FILE_NOT_FOUND) {
+//          throw ex;
+//        }
+//      }
+//
+//      verifyNoFilesInPath(volumeName, bucketName,
+//          Paths.get(keyName).getParent(), !isRecursive);
+//      // TODO: Optimize call to openKey as keyInfo is already available in the
+//      // filestatus. We can avoid some operations in openKey call.
+//      keySession = openKey(args);
+//    } finally {
+//      metadataManager.getLock().releaseLock(BUCKET_LOCK, volumeName,
+//          bucketName);
+//    }
 
     return keySession;
   }
